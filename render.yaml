@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: ingredient-analysis-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: OPENAI_API_KEY
+        sync: false  # Set this as a secret in Render dashboard
+      - key: FIRESTORE_PATH
+        sync: false  # Set this as a secret in Render dashboard
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+    autoDeploy: true
