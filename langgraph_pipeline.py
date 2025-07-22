@@ -15,6 +15,7 @@ import json
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from enum import Enum
+from SPARQLWrapper import SPARQLWrapper, JSON
 
 logging.basicConfig(level=logging.INFO)
 load_dotenv()
@@ -82,17 +83,17 @@ class IngredientState(TypedDict, total=False):
 # ----------------------------------------
 # Lazy Resource Loading
 # ----------------------------------------
-@lru_cache(maxsize=1)
-def get_foodon_graph():
-    """Lazy load FoodOn graph to improve startup time."""
-    try:
-        graph = Graph()
-        graph.parse("config/foodon.owl", format="xml")
-        logging.info("FoodOn ontology loaded successfully")
-        return graph
-    except Exception as e:
-        logging.error(f"Failed to load FoodOn ontology: {e}")
-        return None
+#@lru_cache(maxsize=1)
+#def get_foodon_graph():
+#    """Lazy load FoodOn graph to improve startup time."""
+#    try:
+#        graph = Graph()
+#        graph.parse("config/foodon.owl", format="xml")
+#        logging.info("FoodOn ontology loaded successfully")
+#        return graph
+#    except Exception as e:
+#        logging.error(f"Failed to load FoodOn ontology: {e}")
+#        return None
 
 @lru_cache(maxsize=1)
 def get_firebase_db():
@@ -427,50 +428,45 @@ def check_firebase_cache(state: IngredientState) -> IngredientState:
         return state
 
 def sparql_query_foodon(state: IngredientState) -> IngredientState:
-    """Query FoodOn ontology with SPARQL injection prevention."""
     try:
-        graph = get_foodon_graph()
-        if not graph:
-            return state
-            
-        FOODON = Namespace("http://purl.obolibrary.org/obo/FOODON_")
+        FOODON_SPARQL_ENDPOINT = os.getenv("FOODON_SPARQL_ENDPOINT")
+        sparql = SPARQLWrapper(FOODON_SPARQL_ENDPOINT)
+        sparql.setReturnFormat(JSON)
         candidates = {}
         
-        for ing in state["unresolved"]:
-            # Sanitize input to prevent SPARQL injection
-            safe_ingredient = ing.replace("'", "").replace('"', '').replace('\\', '')
-            
+        for ing in state.get("unresolved", []):
+            safe_ing = ing.replace("'", "").replace('"',"").replace("\\","")
             query = f"""
             PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
             PREFIX oboInOwl: <http://www.geneontology.org/formats/oboInOwl#>
             SELECT DISTINCT ?concept ?label WHERE {{
               VALUES ?pred {{ rdfs:label oboInOwl:hasExactSynonym oboInOwl:hasRelatedSynonym }}
               ?concept ?pred ?label .
-              FILTER(
-                LANG(?label) = "en" && 
-                (CONTAINS(LCASE(str(?label)), LCASE("{safe_ingredient}")) ||
-                 CONTAINS(LCASE("{safe_ingredient}"), LCASE(str(?label))))
+              FILTER(LANG(?label)="en" &&
+                     (CONTAINS(LCASE(str(?label)), LCASE("{safe_ing}")) ||
+                      CONTAINS(LCASE("{safe_ing}"), LCASE(str(?label))))
               )
               FILTER(STRSTARTS(str(?concept), "http://purl.obolibrary.org/obo/FOODON_"))
-            }} 
+            }}
             ORDER BY STRLEN(str(?label))
-            LIMIT 15"""
-            
+            LIMIT 15
+            """
+            sparql.setQuery(query)
             try:
-                results = graph.query(query)
-                candidates[ing] = [(str(r.concept), str(r.label)) for r in results]
+                resp = sparql.query().convert()
+                bindings = resp["results"]["bindings"]
+                candidates[ing] = [(b["concept"]["value"], b["label"]["value"]) for b in bindings]
                 logging.info(f"Found {len(candidates[ing])} candidates for '{ing}'")
-            except Exception as query_error:
-                logging.warning(f"SPARQL query failed for '{ing}': {query_error}")
+            except Exception as qe:
+                logging.warning(f"SPARQL query failed for '{ing}': {qe}")
                 candidates[ing] = []
         
         state["kg_candidates"] = candidates
         return state
-        
+
     except Exception as e:
-        error_msg = f"SPARQL querying failed: {str(e)}"
-        logging.error(error_msg)
-        state.setdefault("errors", []).append(error_msg)
+        logging.error(f"SPARQL querying failed: {e}")
+        state.setdefault("errors", []).append(str(e))
         state["kg_candidates"] = {}
         return state
 
