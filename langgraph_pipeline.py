@@ -849,7 +849,7 @@ if __name__ == "__main__":
     # Example with user safety analysis
     async def main():
         result = await analyze_ingredients_for_user(
-            raw_text="Black tonkatsu sesame ramen",
+            raw_text="Fried pork belly",
             user_id="ih9K8vqe14MJKr60Bzhp4MZToE53"
         )
         print(json.dumps(result, indent=2))
