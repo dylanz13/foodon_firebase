@@ -1,6 +1,6 @@
 # Ingredient Analysis API
 
-A comprehensive food ingredient analysis service that extracts ingredients from menu text, identifies allergens and dietary incompatibilities, and provides personalized safety assessments for users.
+A comprehensive food ingredient analysis service that extracts ingredients from menu text, identifies allergens and dietary incompatibilities, and provides personalized safety assessments for users. Integrates with firebase cloud firestore for storage, along with firebase auth for user ids.
 
 ## Features
 
